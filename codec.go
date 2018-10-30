@@ -1,0 +1,71 @@
+package main
+
+import (
+	"bytes"
+
+	"github.com/tiptok/gonat/model"
+	"github.com/tiptok/gonat/model/jtb808/down"
+	"github.com/tiptok/gonat/model/jtb808/up"
+	"github.com/tiptok/gotransfer/comm"
+)
+
+type JTB808Packer struct {
+}
+
+/*
+   J0001 终端通用应答0x0001
+*/
+func (p *JTB808Packer) J0001(obj interface{}) (packdata []byte, err error) {
+	inEntity := obj.(*up.TermCommonReply)
+	buf := bytes.NewBuffer(nil)
+	buf.Write(comm.BinaryHelper.Int16ToBytes(int16(inEntity.RspMsgSN)))
+	buf.Write(comm.BinaryHelper.Int16ToBytes(int16(inEntity.RspMsgId)))
+	buf.WriteByte(inEntity.RspResult)
+	return buf.Bytes(), nil
+}
+
+/*
+   J1002 主链路登录应答
+*/
+func (p *JTB808Packer) J0002(obj interface{}) (packdata []byte, err error) {
+	buf := bytes.NewBuffer(nil)
+	return buf.Bytes(), nil
+}
+
+type JTB808Parse struct {
+}
+
+//J8001 0x8001 平台通用应答
+func (p *JTB808Parse) J8001(msgBody []byte, h model.EntityBase) interface{} {
+	outEntity := &down.PlatformCommonReply{}
+	outEntity.SetEntity(h)
+	outEntity.RspMsgSN = int(comm.BinaryHelper.ToInt16(msgBody, 0)) //应答ID
+	outEntity.RspMsgId = int(comm.BinaryHelper.ToInt16(msgBody, 2))
+	outEntity.RspResult = msgBody[4]
+
+	/*是否需要应答*/
+	// outEntity.IsNeedRsp = false
+	// outEntity.DownRspEntity = nil
+	return outEntity
+}
+
+//J8102 0x8102 平下发终端升级包
+func (p *JTB808Parse) J8108(msgBody []byte, h model.EntityBase) interface{} {
+	outEntity := &down.SendUpgradePackage{}
+	outEntity.SetEntity(h)
+	if h.PackageSN == 1 {
+		outEntity.UpgradeType = msgBody[0] //应答ID
+		outEntity.ManufacturerId = comm.BinaryHelper.ToASCIIString(msgBody, 1, 5)
+		SoftwareVersionLen := msgBody[6]
+		outEntity.SoftwareVersion = comm.BinaryHelper.ToASCIIString(msgBody, 7, int32(SoftwareVersionLen))
+		outEntity.FileLength = int(comm.BinaryHelper.ToInt32(msgBody, int32(7+SoftwareVersionLen)))
+		//outEntity.DataPackage = msgBody[11+SoftwareVersionLen:]
+	} else {
+		//outEntity.DataPackage = msgBody[:]
+	}
+
+	/*是否需要应答*/
+	// outEntity.IsNeedRsp = false
+	// outEntity.DownRspEntity = nil
+	return outEntity
+}
