@@ -32,6 +32,60 @@ func (p *JTB808Packer) J0002(obj interface{}) (packdata []byte, err error) {
 	return buf.Bytes(), nil
 }
 
+/*
+   J0102 终端鉴权
+*/
+func (p *JTB808Packer) J0102(obj interface{}) (packdata []byte, err error) {
+	inEntity := obj.(*up.TermAuth)
+	buf := bytes.NewBuffer(nil)
+	buf.WriteString(inEntity.AuthCode)
+	return buf.Bytes(), nil
+}
+
+/*
+   J0801 终端升级结果通知
+*/
+func (p *JTB808Packer) J0108(obj interface{}) (packdata []byte, err error) {
+	inEntity := obj.(*up.UpgradeResult)
+	buf := bytes.NewBuffer(nil)
+	buf.WriteByte(inEntity.UpgradeType)
+	buf.WriteByte(inEntity.Result)
+	return buf.Bytes(), nil
+}
+
+/*
+   J8003 补传分包请求 0x8003
+*/
+func (p *JTB808Packer) J8003(obj interface{}) (packdata []byte, err error) {
+	inEntity := obj.(*up.PacketReSendRequest)
+	buf := bytes.NewBuffer(nil)
+	buf.Write(comm.BinaryHelper.Int16ToBytes(int16(inEntity.OrginalOrderID)))
+	if inEntity.PackageSNList != nil {
+		for i := 0; i < len(inEntity.PackageSNList); i++ {
+			buf.Write(comm.BinaryHelper.Int16ToBytes(inEntity.PackageSNList[i]))
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+/*
+   J0200 位置信息汇报
+*/
+func (p *JTB808Packer) J0200(obj interface{}) (packdata []byte, err error) {
+	buf := bytes.NewBuffer(nil)
+	inEntity := obj.(*model.TermPosition)
+	buf.Write(comm.BinaryHelper.UInt32ToBytes(uint(inEntity.AlarmFlag)))
+	buf.Write(comm.BinaryHelper.UInt32ToBytes(uint(inEntity.StateFlag)))
+	buf.Write(comm.BinaryHelper.UInt32ToBytes(uint(inEntity.Lat * 1000000)))
+	buf.Write(comm.BinaryHelper.UInt32ToBytes(uint(inEntity.Lon * 1000000)))
+	buf.Write(comm.BinaryHelper.UInt16ToBytes(uint16(inEntity.Altitude)))
+	buf.Write(comm.BinaryHelper.UInt16ToBytes(uint16(inEntity.Speed)))
+	buf.Write(comm.BinaryHelper.UInt16ToBytes(uint16(inEntity.Direction)))
+	gps, _ := comm.BinaryHelper.GetBCDString(inEntity.GpsTime.Format("060102150405"))
+	buf.Write(gps)
+	return buf.Bytes(), nil
+}
+
 type JTB808Parse struct {
 }
 

@@ -15,13 +15,14 @@ import (
 )
 
 type Terminal struct {
-	Client   *conn.TcpClient
-	Regist   int
-	Auth     int
-	OrderId  int32
-	AuthCode string
-	SimNum   string
-	close    chan struct{}
+	Client    *conn.TcpClient
+	Regist    int
+	Auth      int
+	OrderId   int32
+	AuthCode  string
+	SimNum    string
+	close     chan struct{}
+	sendQueue chan interface{}
 }
 
 func (t *Terminal) GetOrderId() int {
@@ -40,11 +41,19 @@ func (t *Terminal) SendEntity(e interface{}) ([]byte, error) {
 	return send, err
 }
 
+//KeepConn 维持链路信息 数据 发送
 func (t *Terminal) KeepConn() {
 	for {
 		select {
 		case <-t.close:
 			return
+		case send := <-t.sendQueue:
+			if send != nil {
+				_, err := t.SendEntity(send)
+				if err != nil {
+					log.Println(err.Error())
+				}
+			}
 		case <-time.After(time.Second * 15):
 			// if t.Regist == 0 {
 			// 	/*sendRegist*/
@@ -53,27 +62,75 @@ func (t *Terminal) KeepConn() {
 			// if t.Regist == 1 && t.Auth == 0 {
 			// 	/*send auth*/
 			// }
+			// if !t.Client.Conn.IsConneted {
+			// 	bRestart := t.Client.ReStart()
+			// 	log.Printf("Term:%s Restart Result:%v \n", t.SimNum, bRestart)
+			// }
 			heart := &up.TermHeartbeat{
 				EntityBase: model.EntityBase{
 					SimNum: t.SimNum,
 					MsgSN:  t.GetOrderId(),
 				},
 			}
+
 			_, err := t.SendEntity(heart)
 			if err != nil {
 				log.Println(err.Error())
+			} else {
+				if t.Auth != 1 {
+					auth := &up.TermAuth{
+						EntityBase: model.EntityBase{
+							SimNum: t.SimNum,
+							MsgSN:  t.GetOrderId(),
+						},
+						AuthCode: "123456",
+					}
+					_, err = t.SendEntity(auth)
+					if err != nil {
+						log.Println(err.Error())
+					}
+				}
+				t.Auth = 1
 			}
 			/*发送心跳*/
 		}
 	}
 }
 
-func NewTerminal(sIP string, iPort int) *Terminal {
+//PosInterval  定时发送定位数据
+func (t *Terminal) PosInterval(interval int) {
+	//rand.Seed(255)
+	for {
+		select {
+		case <-t.close:
+			return
+		case <-time.After(time.Duration(interval) * time.Millisecond):
+			if t.Auth == 1 {
+				pos := &model.TermPosition{
+					EntityBase: model.EntityBase{
+						SimNum: t.SimNum,
+						MsgSN:  t.GetOrderId(),
+					},
+					GpsTime: time.Now(),
+					Lon:     121.123456,
+					Lat:     35.356789,
+					// AlarmFlag: int64(rand.Int()),
+					// StateFlag: int64(rand.Int()),
+					Speed: 60,
+				}
+				t.sendQueue <- pos
+			}
+		}
+	}
+}
+
+func NewTerminal(sIP string, iPort int, sSimNum string) *Terminal {
 	t := &Terminal{
 		Client: &conn.TcpClient{
 			P: &protocol808{},
 		},
-		SimNum: "13800000002",
+		SimNum:    sSimNum, //Param.SimNum
+		sendQueue: make(chan interface{}, 100),
 	}
 
 	t.Client.NewTcpClient(sIP, iPort, 500, 500)
@@ -135,6 +192,17 @@ func (cli *TermHandler) OnReceive(c *conn.Connector, d conn.TcpData) bool {
 					/*升级完成*/
 					log.Printf("终端升级完成 长度:%d", cli.Upgrage.Length)
 					cli.Upgrage = nil //置空
+
+					/*发送升级完成通知*/
+					upgrageResult := &up.UpgradeResult{
+						EntityBase: model.EntityBase{
+							SimNum: entityBase.SimNum,
+							MsgSN:  cli.Term.GetOrderId(),
+						},
+						UpgradeType: 0,
+						Result:      0,
+					}
+					cli.Term.SendEntity(upgrageResult)
 				}
 			}
 		}
